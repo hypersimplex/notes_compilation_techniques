@@ -1,0 +1,395 @@
+\documentclass[8pt]{extarticle} 
+
+% \usepackage[fleqn]{amsmath}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+% \usepackage{amsmath,amsfonts,amsthm,bm}
+\usepackage{amsthm}
+% \usepackage{breqn}
+\usepackage{mathtools}
+% \usepackage{amssymb}
+% \usepackage{bbm}
+\usepackage{tikz}
+\usepackage[ruled,vlined,linesnumbered,lined,boxed,commentsnumbered]{algorithm2e}
+\usepackage{algpseudocode}
+\usepackage{siunitx}
+% \usepackage{graphicx}
+\usepackage{subcaption}
+%% \usepackage{datetime}
+\usepackage{multirow}
+\usepackage{multicol}
+% \usepackage{mathrsfs}
+\usepackage{fancyhdr}
+\usepackage{fancyvrb}
+\DefineVerbatimEnvironment{Code}{BVerbatim}{baseline=t}
+
+\usepackage{parskip} %turns off paragraph indent
+\pagestyle{fancy}
+
+\usepackage{xcolor}
+\usepackage{mdframed}
+
+\usepackage[small]{titlesec}
+
+\usepackage{hanging}
+
+\usepackage{listings}% http://ctan.org/pkg/listings
+\lstset{
+  basicstyle=\ttfamily\small,
+  mathescape
+}
+
+\usepackage{tabularray}
+
+\usetikzlibrary{positioning}
+\usetikzlibrary{shapes,arrows}
+% Define block styles
+\tikzset{
+    block/.style={rectangle, draw, line width=0.5mm, black, text width=5em, text centered,
+                  rounded corners, minimum height=2em},
+    line/.style={draw, -latex}
+}% <- if you insist in using this in the document add this % here.
+
+\DeclareMathOperator*{\argmin}{argmin}
+\newcommand*{\argminl}{\argmin\limits}
+
+% \newcommand{\mathleft}{\@fleqntrue\@mathmargin0pt}
+% \newcommand{\R}{\mathbb{R}}
+% \newcommand{\Z}{\mathbb{Z}} 
+% \newcommand{\N}{\mathbb{N}}
+% \newcommand{\ppartial}[2]{\frac{\partial #1}{\partial #2}}
+% \newcommand{\p}{\partial}
+% \newcommand{\te}[1]{\text{#1 }}
+% \newcommand{\norm}[1]{\|#1\|}
+
+\newcommand*{\vrectangle}{{\setlength{\fboxsep}{0pt}\fbox{\phantom{l}}}}
+
+\setcounter{MaxMatrixCols}{20}
+
+% remove excess vertical space for align equations
+\setlength{\abovedisplayskip}{0pt}
+\setlength{\belowdisplayskip}{0pt}
+\setlength{\abovedisplayshortskip}{0pt}
+\setlength{\belowdisplayshortskip}{0pt}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{corollary}{Corollary}[theorem]
+\newtheorem{lemma}[theorem]{Lemma}
+
+\begin {document}
+
+\lhead{Notes - Compiler Construction, Bill/Yuan Liu}
+  
+\begin{multicols*}{2}
+
+  Gathered notes from various references:
+  \begin{itemize}
+  \item Modern Compiler Implementation in C \cite{appelbook}
+  \item High Performance Compilers for Parallel Computing \cite{wolfebook}
+  \item The implementation of Functional Programming Languages \cite{peyton1987}
+  \item Modern Compiler Design \cite{grune2012}
+  \item MLIR \cite{mlir2021}, \cite{lei2022}
+  \end{itemize}
+
+  \section{Data Flow Analysis}
+
+  \subsection{Available Expression}
+
+  purpose: compute set of expressions evaluated and not overwritten on all paths from the entry to the target program point
+  
+  domain: set of non-trivial expressions
+
+  direction: forward
+
+  join operator: $\wedge$ (set intersection), eg: must-analysis
+
+  lattice values: $\bot$ = $\emptyset$ (empty set), $\top$ = universal set
+
+  partial order: set_1 $\leq$ set_2 $\iff$ set_1 $\subseteq$ set_2
+
+  transfer function for a basic block B:
+
+  $out(B) = (in(B) - kill(B)) \cup gen(B)$
+
+  note: kill before gen
+
+  kill(B) = all expressions where any operands in the expression are referenced in assignment (LHS) in B
+
+  gen(B) = assignment of an expression to a LHS variable where all operands of the expression are not redefined subsequently in B (which would make expression stale)
+
+  boundary condition:
+  
+  in(entry) = $\bot$ since no expressions are computed/available at the start
+
+  out(B) = $\top$ for $\forall B \neq entry$: join operator narrows the candidates in algorithm
+
+  extra notes:
+
+  use of this analysis in common subexpression elimination IR transformation
+
+  \vfill\null
+  \columnbreak
+    
+  \section{Liveness Analysis}
+
+  purpose: compute variable at a program point to see wether if it is used by a code path later on
+
+  domain: set of variables
+
+  direction: backward
+
+  join operator: $\cup$ (set union), eg: may-analysis
+
+  eg: $out(s) = \cup_y in(y)$ where $y \in$ successor($s$)
+
+  lattice values: $\bot = \emptyset$ (empty set of variables), $\{var_i, ..\}$, $\top$ = universal set of variables
+
+  partial order: $\leq = \subseteq$
+
+  transfer function:
+
+  $out(B) = (in(B) - kill(B)) \cup gen(B)$
+
+  note: apply kill set first before applying gen set
+
+  $gen(s) = use(s) = \{ x:\ if\ S: lhs = .. x .. \}$ = all variables referened in RHS of an assignment
+
+  $kill(s) = def(s) = \{ x:\ if\ S: x = ... \}$ = LHS variable in an assignment
+
+  boundary condition:
+
+  $out(exit) = \emptyset$ if pure local analysis, or
+
+  $out(exit)$ = set of variables referenced by return statement
+  
+  \vfill\null
+  \columnbreak
+
+  \section{Reaching Definition May-Analysis}
+
+  purpose: compute if there is at least 1 path incoming to the current program point has the definition $D: x = ...$ and there exists no reassignment of $x$ with something else after $D$
+  
+  domain: set of definition sites
+  
+  direction: forward
+
+  join operator = $\cup$ (set union)
+
+  transfer function:
+
+  $out(B) = (in(B) - kill(B)) \cup gen(B)$
+  
+  kill(B) = existing definitions overwritten (involving variable being defined/assigned) in B
+
+  gen(B) = locally exposed new definitions in basic block B
+
+  bounary condition:
+
+  $out(entry) = \emptyset$
+
+  \section{Reaching Definition Must-Analysis}
+
+  purpose: compute if all paths incoming to the current program point has the definition $D: x = ...$ and there exists no reassignment of $x$ with something else after $D$
+  
+  join operator = $\wedge$ (set intersection)
+
+  everything else is the same as reaching definition may-analysis
+
+  \vfill\null
+  \columnbreak
+
+  \section{Constant Propagation, IR Rewrite}
+  
+  purpose: computes where a variable is known to be a compile time known value c, or undefined, or dynamic/undeterminable value
+
+  domain: mapping of variable to abstract value
+
+  direction: forward
+
+  lattice values: $\bot$, $c_i \in Constant$, $\top$
+
+  partial ordering: $\bot < c_i < \top$
+  
+  join operator:
+
+  \begin{verbatim}
+  f(a,b) = case (a,b) of
+             (top, _) => top // absorb; has priority over (bot,v)
+             (bot, v) => v // bot acts as identity for join
+             (c, c) => c // same constant in different branches
+             (c1, c2) | c1 != c2 => top // dynamic/over-determined
+  \end{verbatim}
+
+  boundary condition:
+
+  \begin{verbatim}
+  in(entry)(v) = top if v is a parameter/external unknown value
+               = bot if v is uninitialized
+
+  out(B)(v) = bot for all v, all B != entry
+  \end{verbatim}
+
+  transfer function: not applicable using generic DFA equation
+
+  update mapping of variable to abstract value for specific statements:
+
+  \begin{verbatim}
+  out = in + mapping
+  \end{verbatim}
+
+  statement with binary operator S: $x = op(a, b)$
+  \begin{verbatim}
+  f(a, b) = case (a,b) of
+              (top, _) => top // override; highest precedence
+              (bot, v) => bot // still waiting for an operand
+              (c1, c2) => op(c1, c2) //both operands are constants
+
+  mapping[x] = f(a, b)
+  \end{verbatim}
+
+  statement with assignment operator $S: x = y$
+
+  \begin{verbatim}
+  f(x) = mapping[y]
+  \end{verbatim}
+  
+  external variables, eg:
+  \begin{verbatim}
+    x = read_io() //dynamic
+  \end{verbatim}, then
+  $x$ is mapped to $\top$
+
+  other statements that do not modify variables, then use identity mapping:
+  \begin{verbatim}
+  out = in
+  \end{verbatim}
+
+  transfer mapping composition for basic block $B$: compose statement-level mappings within $B$:
+  \begin{verbatim}
+  out(B) = f_n(...(f_0(in(B))))
+  \end{verbatim}  
+  
+  this transformation still shares worklist based approach typical in DFA framework, using pseudo-topological ordering or reverse post order (reverse of post-visit DFS order)
+  
+  \vfill\null
+  \columnbreak
+
+  \section{Common Subexpression Elimination, IR Rewrite}
+  
+  dependent analysis:
+
+  available expression analysis output $in(B)$ computed for every $B$ in the program
+
+  direction: forward
+
+  lattice values: set of available expressions
+
+  partial ordering:
+
+  $set_1 \leq set_2 \iff set_1 \subseteq set_2$
+
+  bookkeeping:
+
+  expression table lookup mapping operands tuple of expression to variable (SSA) holding the result (LHS of assignment to expressions); this expression is queried and mutated during  traversal of graph by the algorithm
+
+  traversal order: dominator tree order (eg: dfs over dominator tree)
+
+  algorithm:
+  
+  \begin{verbatim}
+  f(B) =  
+    // in[B] computed by available expr analysis
+    // seed with incoming paths' expressions
+    // as the set of available expressions
+    local_avai_exprs = in[B].clone()
+
+    // for rollback at the exit of the scope
+    keys_inserted_in_scope = {}
+
+    for instr S in B in sequence:
+      let (lhs = rhs) = S
+
+      // expression under consideration
+      // eg: a + b if original assignment is ..=a+b
+      key = rhs
+
+      // check using local_avai_exprs to make sure
+      // expression is available on every incoming paths
+      //
+      // use of exprs_table to see dominating variable
+      if key in local_avai_exprs and
+         key in exprs_table:
+        var_existing = exprs_table.lookup(key)
+        replace S with `lhs = var_existing`
+      else:
+        exprs_table.insert(key, lhs)
+        local_avai_exprs.insert(key)
+        keys_inserted_in_scope.insert(key)
+
+    // recursion using immediate domination relation
+    // this guarantees items processed in exprs_table
+    // is seen when we visit dominated nodes
+    for child in dominator_tree[B]:
+      f(child)
+
+    for k in keys_inserted_in_scope:
+      exprs_table.erase(k)
+  \end{verbatim}
+  
+  \vfill\null
+  \columnbreak
+
+  \section{Copy Propagation, IR Rewrite}
+  
+  todo
+
+  \vfill\null
+  \columnbreak
+
+  \section{Dead Code Elimination, IR Rewrite}
+  
+  todo
+
+  \vfill\null
+  \columnbreak
+
+  \section{Partial Redundancy Elimination, IR Rewrite}
+  
+  defer for now
+
+  \vfill\null
+  \pagebreak
+
+  \section{MFP}
+  todo
+  \section{MOP}
+  todo
+  
+  \section{Dominance}
+  todo
+  
+  \section{Immediate Dominance}
+  todo
+  
+  \section{Dominance Frontier}
+  todo
+  
+  \section{Phi-Function Placement}
+  todo
+  
+  \section{SSA Renaming}
+  todo
+  
+  \section{Region Analysis}
+  todo
+  
+  \section{Loop Inversion}
+  transformation of a pre-test loop into a post-test loop
+  
+\bibliographystyle{plain}
+\bibliography{notebook}
+    
+\end{multicols*}
+
+\end {document}
