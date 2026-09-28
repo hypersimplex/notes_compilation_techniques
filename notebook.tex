@@ -343,7 +343,7 @@
   \vfill\null
   \columnbreak
 
-  \section{Copy Propagation non-SSA, IR Rewrite}
+  \section{Copy Propagation, non-SSA, IR Rewrite}
 
   dependence: available copies analysis
 
@@ -413,8 +413,60 @@
   \vfill\null
   \columnbreak
 
-  \section{Copy Propagation SSA, IR Rewrite}
-  todo
+  \section{Copy Propagation, SSA, IR Rewrite}
+
+  with help of def-use chain constructed, we don't need an extra analysis pass
+
+  algorithm:
+
+  \begin{verbatim}
+  // maps destination to source in copy statement,
+  // eg: (`dst=src`)
+  //
+  // note: since program is in SSA form, items in
+  // copy_map are not overwritten/deleted and only
+  // can expand
+  copy_map = {}
+
+  // alternatively can use reverse post-order
+  // (reverse dfs post-visit) to guarantee that
+  // for any statement, all definitions of its
+  // operands have been seen by the algorithm
+  f(B):
+    for statement S in B:
+
+      // apply substitution
+      for operand u read by S:
+        replace u in S by find_canonical(copy_map, u)
+
+      // process copy assignments
+      if S is of form `x=y`:
+        y_canonical = find_canonical(copy_map, y)
+        copy_map.insert(x, y_canonical)
+        // can optionally mark `x=y` as dead code
+
+      else if S is of form `x = phi(u_1, ..., u_n)`:
+        // collapse phi function
+        operands = [ find_canonical(copy_map, u_i)
+                     for u_i in u_1..=u_n ]
+        operands_filtered = unique(operands) \ {x}
+        if operands_filtered.len() == 1:
+          operand = operands_filtered[0]
+          copy_map.insert(x, operand)
+          replace S with `x = operand`
+
+      for child in dominator_tree[B]:
+        f(child)
+
+  find_canonical(map, var):
+    // also can use path compression to lookup a
+    // chain of copies
+    while map.contains(var):
+      var = map[var]
+    var
+
+  f(entry)
+  \end{verbatim}
   
   \vfill\null
   \columnbreak
