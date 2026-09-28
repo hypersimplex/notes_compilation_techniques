@@ -118,7 +118,7 @@
   todo
 
   \vfill\null
-  \columnbreak
+  \pagebreak
 
   \section{Data Flow Analysis and Rewrite}
 
@@ -134,7 +134,7 @@
 
   lattice values: $\bot$ = $\emptyset$ (empty set), $\top$ = universal set
 
-  partial order: set_1 $\leq$ set_2 $\iff$ set_1 $\subseteq$ set_2
+  partial order: $set_1 \leq set_2 \iff set_1 \subseteq set_2$
 
   transfer function for a basic block B:
 
@@ -177,9 +177,9 @@
 
   transfer function:
 
-  $out(B) = (in(B) - kill(B)) \cup gen(B)$
+  $in(B) = (out(B) - kill(B)) \cup gen(B)$
 
-  note: apply kill set first before applying gen set
+  note: apply kill set first before applying gen set; and in and out is inverted due to backward cfg problem
 
   $gen(s) = use(s) = \{ x:\ if\ S: lhs = .. x .. \}$ = all variables referened in RHS of an assignment
 
@@ -269,8 +269,10 @@
   statement with binary operator S: $x = op(a, b)$
   \begin{verbatim}
   f(a, b) = case (a,b) of
-              (top, _) => top // highest precedence
+              (v, bot) => bot // unprocessed operand
               (bot, v) => bot // unprocessed operand
+              (top, _) => top
+              (_, top) => top
               (c1, c2) => op(c1, c2)
 
   mapping[x] = f(a, b)
@@ -305,9 +307,7 @@
 
   \section{Common Subexpression Elimination, IR Rewrite}
   
-  dependent analysis:
-
-  available expression analysis output $in(B)$ computed for every $B$ in the program
+  dependent analysis: available expression analysis output $in(B)$ computed for every $B$ in the program
 
   direction: forward
 
@@ -326,10 +326,17 @@
   algorithm:
   
   \begin{verbatim}
+  // maps: expression -> [variable]
+  // note a stack of variables as value in the map due
+   // to different scopes
+  exprs_table = {}
+
   f(B) =  
     // in[B] computed by available expr analysis
     // seed with incoming paths' expressions
     // as the set of available expressions
+    //
+    // this is a set of expressions
     local_avai_exprs = in[B].clone()
 
     // for rollback at the exit of the scope
@@ -349,12 +356,16 @@
       // use of exprs_table to see dominating variable
       if key in local_avai_exprs and
          key in exprs_table:
-        var_existing = exprs_table.lookup(key)
+        var_existing = exprs_table.lookup_last(key)
         replace S with `lhs = var_existing`
       else:
-        exprs_table.insert(key, lhs)
+        exprs_table[key].push_back(lhs)
         local_avai_exprs.insert(key)
-        keys_inserted_in_scope.insert(key)
+        keys_inserted_in_scope.push(key)
+
+      // assignment statement for lhs => erase available
+      // expressions referencing lhs
+      local_avai_exprs.erase_where(|expr| expr.uses(lhs))
 
     // recursion using immediate domination relation
     // this guarantees items processed in exprs_table
@@ -363,7 +374,9 @@
       f(child)
 
     for k in keys_inserted_in_scope:
-      exprs_table.erase(k)
+      exprs_table[k].pop_back()
+      if exprs_table[k].empty():
+        exprs_table.erase(k)
   \end{verbatim}
   
   \vfill\null
@@ -551,6 +564,8 @@
 
   \section{Aggressive Dead Code Elimination, SSA, IR Rewrite}
 
+  assumption: all code is dead unless proven otherwise
+  
   dependence:
 
   use-def chains
@@ -561,8 +576,65 @@
 
   algorithm:
 
-  [todo]
+  \begin{verbatim}
+  worklist = []
+  mark = {}
 
+  // initialization
+  // note: exit node can be marked as having side effect
+  for instruction S in cfg where S has side effects:
+    mark.insert(S)
+    worklist.insert(S)
+
+  // propagate liveness
+  while !worklist.empty():
+    S = worklist.pop()
+
+    // data dependence
+    for operand read in S:
+      // use def chain should be available
+      // (eg: compute it from reaching definition
+      // analysis)
+      d = use_def_map[operand]
+      if d == null: // literals and external arguments
+        continue
+      if !mark.contains(d):
+        mark.insert(d)
+        worklist.insert(d)
+
+    // handle control dependence
+    //
+    // note: control dependence set is equivalent to
+    // post dominance frontier; this returns a set
+    // of basic blocks whose conditional branch 
+    // determines whether input block executes or not
+    for block C in control_dependence(block(S)):
+      let br = branch_instruction(C)
+      if br != null and !mark.contains(br):
+        mark.insert(br)
+        worklist.insert(br)
+
+  // sweep to clean up
+  for basic block B in cfg:
+    for instruction S in B:
+      if !mark.contains(S):
+        delete S
+    if branch_instruction(B) was deleted:
+      target = nearest_live_post_dominator(B)
+      if target == null:
+        target = exit_node
+      replace branch_instruction(B) with jump to target
+
+  // helper function
+  nearest_live_post_dominator(B) =
+    // use post dominance tree to query
+    cur = ipdom(B)
+    // note: exit node have side effect and thus marked
+    while cur != null and cur has no marked instructions:
+      cur = ipdom(cur)
+    cur
+  \end{verbatim}
+  
   \vfill\null
   \columnbreak
 
