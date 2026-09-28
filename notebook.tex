@@ -94,7 +94,33 @@
   \item MLIR \cite{mlir2021}, \cite{lei2022}
   \end{itemize}
 
-  \section{Data Flow Analysis}
+  \section{Data Flow Framework}
+
+  \section{Dominance}
+  todo
+  
+  \section{Immediate Dominance}
+  todo
+  
+  \section{Dominance Frontier}
+  todo
+  
+  \section{Phi-Function Placement}
+  todo
+  
+  \section{SSA Renaming}
+  todo
+
+  \section{MFP}
+  todo
+
+  \section{MOP}
+  todo
+
+  \vfill\null
+  \columnbreak
+
+  \section{Data Flow Analysis and Rewrite}
 
   \subsection{Available Expression}
 
@@ -217,16 +243,16 @@
 
   \begin{verbatim}
   f(a,b) = case (a,b) of
-             (top, _) => top // absorb; has priority over (bot,v)
-             (bot, v) => v // bot acts as identity for join
-             (c, c) => c // same constant in different branches
-             (c1, c2) | c1 != c2 => top // dynamic/over-determined
+             (top, _) => top // absorb; top priority
+             (bot, v) => v // bot acts as identity
+             (c, c) => c
+             (c1, c2) | c1 != c2 => top // dynamic
   \end{verbatim}
 
   boundary condition:
 
   \begin{verbatim}
-  in(entry)(v) = top if v is a parameter/external unknown value
+  in(entry)(v) = top if v is a external unknown value
                = bot if v is uninitialized
 
   out(B)(v) = bot for all v, all B != entry
@@ -243,9 +269,9 @@
   statement with binary operator S: $x = op(a, b)$
   \begin{verbatim}
   f(a, b) = case (a,b) of
-              (top, _) => top // override; highest precedence
-              (bot, v) => bot // still waiting for an operand
-              (c1, c2) => op(c1, c2) //both operands are constants
+              (top, _) => top // highest precedence
+              (bot, v) => bot // unprocessed operand
+              (c1, c2) => op(c1, c2)
 
   mapping[x] = f(a, b)
   \end{verbatim}
@@ -480,8 +506,8 @@
   algorithm:
 
   \begin{verbatim}
-  // any order is valid since computations of live variable
-  // analysis are cached
+  // any order is valid since computations of live
+  // variable analysis are cached
   for B in cfg in any order:
 
     // seed with computed values from live variable
@@ -546,26 +572,6 @@
 
   \vfill\null
   \pagebreak
-
-  \section{MFP}
-  todo
-  \section{MOP}
-  todo
-  
-  \section{Dominance}
-  todo
-  
-  \section{Immediate Dominance}
-  todo
-  
-  \section{Dominance Frontier}
-  todo
-  
-  \section{Phi-Function Placement}
-  todo
-  
-  \section{SSA Renaming}
-  todo
   
   \section{Region Analysis}
   todo
