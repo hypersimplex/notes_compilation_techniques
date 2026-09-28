@@ -54,6 +54,8 @@
 \DeclareMathOperator*{\argmin}{argmin}
 \newcommand*{\argminl}{\argmin\limits}
 
+\usepackage[small]{titlesec}
+
 % \newcommand{\mathleft}{\@fleqntrue\@mathmargin0pt}
 % \newcommand{\R}{\mathbb{R}}
 % \newcommand{\Z}{\mathbb{Z}} 
@@ -315,7 +317,8 @@
       key = rhs
 
       // check using local_avai_exprs to make sure
-      // expression is available on every incoming paths
+      // expression is available on every incoming
+      // paths
       //
       // use of exprs_table to see dominating variable
       if key in local_avai_exprs and
@@ -340,10 +343,79 @@
   \vfill\null
   \columnbreak
 
-  \section{Copy Propagation, IR Rewrite}
-  
-  todo
+  \section{Copy Propagation non-SSA, IR Rewrite}
 
+  dependence: available copies analysis
+
+  \subsection{analysis phase: available copies}
+  
+  domain: set of copy statements of the form $S: x = y$ where $source=y$, $target=x$
+
+  direction: forward
+
+  lattice values: $\bot = \emptyset$, $\{ s_i \}$ where $s_i$ is a copy statement, $\top =$ universal set
+
+  join operator = $\wedge$ (set intersection) $\implies$ must-analysis
+  
+  boundary condition:
+
+  $in[entry] = \emptyset$
+
+  $in[B] / out[B] = $ universal set for $B \neq entry$
+
+  transfer function:
+
+  $out(B) = (in(B) - kill(B)) \cup gen(B)$
+
+  $kill(B) =$ set of statements that have any variable in its LHS or RHS assigned to or modified later on in basic block $B$; this is similar to reaching definition analysis except that we also kill if source variable is modified in any part of $B$ (vs. reaching definition where we kill only if target variable is modified later on in $B$)
+
+  $gen(B) =$ set of statements that are of the form $S: a = b$ and $a, b$ are not modified later on in $B$
+
+  other notes:
+
+  similar to available expression analysis, but different in the domain and kill set
+
+  \subsection{IR rewrite phase}
+
+  perform after analysis phase
+
+  \begin{verbatim}
+  for B in cfg in any order:
+    cur_available = in[B].clone().map(|s|{
+      let (S: x=y) = s
+      (x, y)
+    })
+    for instruction S in B:
+      for (var x) referenced in S's RHS:
+      // eg: `.. = .. x ..` in S
+      if cur_available.contains(`x`):
+        z = find_canonical(cur_available, `x`)
+        replace `x` with z in S
+      if S modifies var v:
+        // delete expressions involving v
+        // (either LHS/RHS of an assignment)
+        cur_available.erase_where(|item|{
+          item is of form `(v, _)` or `(_, v)`
+        })
+      if S is of form `u=w` and `w!=u` (copy statement):
+        cur_available.insert(u, w)
+
+  find_canonical(map, key) = 
+    while map.contains(key):
+      key = map[key]
+    key
+  \end{verbatim}
+
+  other notes:
+
+  applying copy propagation may make variable be live longer
+
+  \vfill\null
+  \columnbreak
+
+  \section{Copy Propagation SSA, IR Rewrite}
+  todo
+  
   \vfill\null
   \columnbreak
 
