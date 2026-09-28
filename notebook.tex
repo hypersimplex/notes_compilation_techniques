@@ -471,9 +471,71 @@
   \vfill\null
   \columnbreak
 
-  \section{Dead Code Elimination, IR Rewrite}
+  \section{Dead Code Elimination, non-SSA, IR Rewrite}
+
+  dependence: live variable analysis (may-analysis)
+
+  direction: backward
+
+  algorithm:
+
+  \begin{verbatim}
+  // any order is valid since computations of live variable
+  // analysis are cached
+  for B in cfg in any order:
+
+    // seed with computed values from live variable
+    // analysis earlier
+    //
+    // this is used to compute liveness within
+    // the current basic block B
+    live_vars = out[B].clone() // set of live variables
+
+    for S in B in reverse order:
+
+      if S is of form `x = ..`:
+
+        if x not in live_vars and S has no side effects:
+          remove S
+          continue
+
+        // definition kills liveness
+        live_vars.erase(x)
+
+        // use generates liveness
+        for var on RHS of `S: x = expr`:
+          live_vars.insert(var)
+
+      // note: conditional control flow are classified
+      // as having side effects, eg:
+      // vars used in expr of `if(expr) {..}` are
+      // treated as used in S
+      else if S has side effects:
+        for var used/read in S:
+          live_vars.insert(var)
+          
+  \end{verbatim}
+
+  notes:
+
+  pass is local and independent for each basic block
   
-  todo
+  \vfill\null
+  \columnbreak
+
+  \section{Aggressive Dead Code Elimination, SSA, IR Rewrite}
+
+  dependence:
+
+  use-def chains
+
+  post dominator tree
+
+  control dependence frontiers (reverse dominance frontiers)
+
+  algorithm:
+
+  [todo]
 
   \vfill\null
   \columnbreak
