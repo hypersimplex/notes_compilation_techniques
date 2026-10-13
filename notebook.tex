@@ -94,31 +94,314 @@
   \item MLIR \cite{mlir2021}, \cite{lei2022}
   \end{itemize}
 
+  \vfill\null
+  \columnbreak
+    
   \section{Data Flow Framework}
 
   \section{Dominance}
-  todo
+  $x$ dom $y$ $\iff$ all paths from entry to $y$ pass through $x$
+
+  eg: $x$ is on a critical path from entry to $y$ $\iff$ removing $x$ will separate $y$ from entry
+  
+  reflexive: $x$ dom $x$
+
+  notation: $dom(y) = \{ x \} =$ set of nodes such that each node in the set dominates $y$
+
+  notation: $dom^{-1}(y) = \{ x \} =$ set of nodes that $y$ dominates
+
+  \section{Strict Dominance}
+
+  dominance plus requirement that the node being dominated cannot be itself
+
+  $x$ sdom $y$ $\iff$ $x$ dom $y$ and $x \neq y$
+
+  $\neg$(x$ sdom $y) $\iff$ $\neg$($x$ dom $y$) or $x = y$
   
   \section{Immediate Dominance}
-  todo
-  
-  \section{Dominance Frontier}
-  todo
-  
-  \section{Phi-Function Placement}
-  todo
-  
-  \section{SSA Renaming}
-  todo
 
-  \section{MFP}
-  todo
+  $x$ immediately dominates $y$ $\iff$\\
+  $x$ dom $y$ and $x \neq y$ and $(\forall z) z$ dom $y$ and $z \neq y$ $\implies$ $z$ dom $x$
 
-  \section{MOP}
-  todo
+  eg: $x$ is the closest dominator of $y$; there exists no intermediate $z \neq y$ and $z \neq x$ such that $x$ dom $z$ and $z$ dom $y$
+
+  irreflexive: $\neg(x\ idom\ x)$
+
+  notation: $idom(y) = x$ $\iff$ node, $x$, that immediately dominates $y$ (1 to 1 mapping)
+
+  $idom^{-1}(y) = \{ x \}$ = inverse of immediate dominator = a set of nodes that $y$ immediately dominates
+
+  $idom$ or $idom^{-1}$ can be used to construct a dominator tree where a node's parent correspond to $idom(node)$ and a node's children correspond to $idom^{-1}(node)$
+
+  we can use the dominator tree to walk up from a target node towards the root in order to query if it is dominated by another node, eg:
+  
+  $x$ dom $y$ $\iff$ $(\exists x)$ $x$ is an ancestor node of $y$ in the dominator tree
 
   \vfill\null
-  \pagebreak
+  \columnbreak
+    
+  \section{Dominance Frontier}
+
+  for a node $x$, it is a set of nodes such that for each node $y$ in the set, $x$ does not strictly dominate $y$ and there exists a predecesstor $z$ of $y$ that is dominated by $x$
+
+  $DF(x) = \{ y \}$ where $\neg(x\ sdom\ y)$ and $(\exists z \in pred(y))$ $x$ dom $z$
+
+  $DF$ can be algorithmically defined efficiently when the dominator tree is available:
+
+  $DF(x) = DF_{local}(x) \cup \{ DF_{up}(z) : z \in idom^{-1}(x) \}$
+
+  note: $z$ is a child of $x$ in the dominator tree (eg: using immediate dominance relation)
+  
+  where
+
+  $DF_{local}(x) = \{y\}$ s.t. $y \in succ(x)$ and $\neg(x\ sdom\ y)$
+
+  note: $\neg(x\ sdom\ y)$ $\iff$ $x=y$ or $\neg(x\ dom\ y)$
+  
+  $DF_{local}(x) = \{y\}$ s.t. $y \in succ(x)$ and ($x=y$ or $\neg(x\ dom\ y)$)
+
+  note for $DF_{local}$:
+
+  $y$ has a predecessor $x$, and $x$ dom $x$ which trivially satisfies part of the requirement for dominance frontier of $x$
+
+  $DF_{up}(z) = \{ y \}$ s.t. $y \in$ DF($z$) and $\neg$(idom($z$) sdom $y)$
+
+  note for $DF_{up}$:
+
+  $\neg$(idom($z$) sdom $y$) checks for the part of the requirement that the original node, idom($z$)=$x$, does not strictly dominate $y$
+
+  call to $DF_{up}(z)$, $z \in idom^{-1}(x)$ in $DF(x)$ guarantees that $y \in DF(z)$ has a predecessor that is dominated by $z$ and by transitivity that predecessor is dominated by $x$:
+
+  $y \in DF(z) \implies$ exists a predecessor $p$ that is dominated by $z$ by definition/construction
+
+  $z \in idom^{-1}(x) \iff$ $z$ is dominated by $x$
+
+  use transitivity: $z$ dom $p$, $x$ dom $z$ $\implies$ $x$ dom $p$
+
+  $z$ therefore has a predecessor $p$ that is dominated by $x$
+
+  then, the remaining check is just:
+
+  $\neg$($x$ sdom $z$) = $\neg$($idom(z)$ sdom $z$)
+
+  \vfill\null
+  \columnbreak
+    
+  \section{Phi-Function Placement}
+
+  use computed dominance frontier information to place minimal number of phi-functions for each variable in the program
+
+  phi-function occurs at CFG convergence point where incoming paths contain assignment(s) to target variable to different values in their paths
+
+  the minimal number of convergence points are computable using dominance frontier of each node where each node contains an assignment to the target variable
+
+  \begin{verbatim}
+  place_phi_for_var(v):
+    // all nodes with assignment to v will be
+    // processed by worklist
+    // { node }
+    worklist = []
+    // monotonically increasing wrt. number of nodes
+    // in the set as algo. progresses
+    // { node }
+    added_to_worklist = {}
+    // { node }
+    phi_placed_in_node = {}
+    for basic_block in program:
+      if assignment s to v exists in basic_block:
+        worklist.insert(basic_block)
+        added_to_worklist.insert(basic_block)
+
+    while let Some(n) = worklist.take():
+      for dest_node in dominance_frontier(n):
+
+        // guard: only 1 phi-function at each node
+        // per variable
+        if phi_placed_in_node.contains(dest_node):
+          continue
+
+        phi_placed_in_node.insert(dest_node)
+        statement = dest_node.prepend_phi_function_for_var(v)
+
+        // phi-function acts like a pseudo-assignment
+        // so enqueue dominance frontier node into worklist
+        // for transitivity
+        if added_to_worklist.contains(dest_node):
+           continue
+
+        added_to_worklist.insert(dest_node)
+        worklist.insert(dest_node)
+
+  place_phi_for_program:
+    mark_all_assignments_to_vars_in_program()
+    for variable v in program:
+      place_phi_for_var(v)
+  \end{verbatim}
+
+  \vfill\null
+  \columnbreak
+  
+  \section{SSA Renaming}
+
+  SSA renaming can be done on IO/arrays/scalars to increase the precision of flow insensitive analysis
+
+  typically, scalars are SSA renamed for practicality and complexity vs. benefit reasons
+  
+  after phi-functions have been placed at program convergence points, we perform the renaming which includes phi-functions as well
+
+  \begin{verbatim}
+  // { original variable -> renamed variable }
+  name_map = {}
+
+  ssa_rename(name_map, node, v):
+    stack_restore_count = 0
+
+    for statement s in node:
+      for use of v in s, if s is a non-phi statement:
+        replace use of v with name_map[v].back()
+      if s is an assignment to v (incl. phi-function):
+        name_map[v].push(generate_unique(v))
+        stack_restore_count += 1
+
+    // fix up argument to phi-functions
+    for n in successors(node):
+      if n contains phi-function f for variable v:
+        replace an argument to f associated to
+        the current code path with name_map[v].back()
+
+    // recursion using inverse immediate dominators /
+    // children of the node in dominator tree
+    for child in inverse_idom(node):
+      ssa_rename(name_map, child, v)
+
+    for i in 0..stack_restore_count:
+      name_map[v].pop_back()
+
+  for variable v in program:
+    // seed in case variable is never
+    // assigned before use, eg:
+    // a function parameter
+    name_map[v] = [generate_unique(v)]
+
+    ssa_rename(name_map, entry_node, v)
+  \end{verbatim}
+  
+  \vfill\null
+  \columnbreak
+
+  \section{Semilattice}
+
+  note: we follow the convention used in MLIR (join-semilattice)
+
+  $S = (V, \sqcup)$
+
+  where $V$ = join semilattice values, $\sqcup$ = join operator
+
+  by construction, let bottom and top values satisfy:
+  
+  $x \sqcup \bot = x$\\
+  $x \sqcup \top = \top$\\
+  $\bot < x < \top, x \in (V - \{ \bot, \top \})$
+  
+  properties of $V$ and the join operator $\sqcup$:
+
+  idempotent: $v \sqcup v = v$\\ 
+  commutative: $a \sqcup b = b \sqcup a$\\
+  associative: $(a \sqcup b) \sqcup c = a \sqcup (b \sqcup c)$
+
+  partial order relation of values of semilattice:
+
+  $a \leq b$ can be visually represented by a path from $a$ to $b$ in the join-semilattice diagram (with a directed edge from $a$ to $b$) moving toward the direction of $\top$
+
+  properties of partial order $\leq$ relation:
+
+  reflexive: $x \leq x$\\
+  anti-symmetric: $x \leq y \wedge y \leq x \implies x = y$\\
+  transitive: $x \leq y \wedge y \leq z \implies x \leq z$
+
+  $a \leq b \iff a \sqcup b = b$
+
+  least upperbound definition:
+
+  $a \sqcup b = m \iff (a \leq m) \wedge (b \leq m) \wedge ((\forall c) (a \leq c) \wedge (b \leq c) \implies m \leq c)$
+
+  \vfill\null
+  \columnbreak
+    
+  \section{MFP (Maximum Fixed Point)}
+
+  idea: join paths at intermediate points before applying transfer function $f_i$ for the current node/block, eg:
+  
+  $f_3(f_1(x \sqcup y) \sqcup f_2(a \sqcup b))$
+
+  note: transfer function $f$ is required to be monotone in order to converge to a fix point where:
+
+  $x \leq y \implies f(x) \leq f(y)$
+
+  using the partial order relation defined in Semilattice section
+
+  typically this is infused with the iterated fixed point algorithm for DFA (forward direction):
+
+  \begin{verbatim}
+  // initialization of boundary conditions:
+  for node in cfg if node != entry:
+    node.input_value = bot_value
+    node.output_value = bot_value
+
+  // or just set entry output value if there is
+  // nothing in the body of entry node
+  entry.input_value = boundary_val
+  entry.output_value = entry.xfer_fn(entry.input_value)
+
+  // optimization: use any pseudo-topo. sorted order
+  worklist = reverse_post_order(cfg) \ {entry}
+
+  while let(node) = worklist.take():
+    old_output_value = node.output_value
+
+    // compute join at intermediate point from
+    // multiple incoming paths
+    //
+    // note: join(x, bot) = x
+    value_joined = bot_value
+    for pred in node.predecessors():
+      value_joined = join(value_joined,
+                          pred.output_value)
+
+    // save value at input of current node
+    node.input_value = value_joined
+
+    // apply local transfer function of the node where
+    // the function is monotonic; cache value
+    node.output_value = node.xfer_fn(node.input_value)
+
+    // propagate change
+    if node.output_value != old_output_value:
+      for succ in node.successors():
+        if !worklist.contains(succ):
+          worklist.add(succ)
+  \end{verbatim}
+  
+  \section{MOP (Meet Over Path)}
+
+  idea: apply transfer function over all paths leading to the current node/block before join ($\sqcup$) operation
+
+  let $f$ be the overall transfer function:
+
+  $f(x) = f_n(f_{n-1}(..f_{entry}(x)))$, $n$ being the current block
+
+  $MOP = \bigsqcup_{p:=\text{path\ to\ current\ block}} f_p(\text{boundary\_value})$
+
+  if the DFA framework is distributive, then it satisfies:
+
+  $f(x) \sqcup f(y) = f(x \sqcup y)$
+
+  in terms of precision, using partial ordering relation:
+  
+  $\bot \leq$ ideal $\leq$ MOP $\leq$ MFP $\leq \top$
+
+  \vfill\null
+  \columnbreak
 
   \section{Data Flow Analysis and Rewrite}
 
@@ -130,11 +413,11 @@
 
   direction: forward
 
-  join operator: $\wedge$ (set intersection), eg: must-analysis
+  join operator: $\cap$ (set intersection), eg: must-analysis
 
-  lattice values: $\bot$ = $\emptyset$ (empty set), $\top$ = universal set
+  lattice values: $\bot$ = universal set, $\top$ = $\emptyset$ (empty set)
 
-  partial order: $set_1 \leq set_2 \iff set_1 \subseteq set_2$
+  partial order: $set_1 \leq set_2 \iff set_1 \supseteq set_2$
 
   transfer function for a basic block B:
 
@@ -148,9 +431,9 @@
 
   boundary condition:
   
-  in(entry) = $\bot$ since no expressions are computed/available at the start
+  in(entry) = $\top$ since no expressions are computed/available at the start
 
-  out(B) = $\top$ for $\forall B \neq entry$: join operator narrows the candidates in algorithm
+  out(B) = $\bot$ for $\forall B \neq entry$: join operator narrows the candidates in algorithm
 
   extra notes:
 
@@ -161,7 +444,7 @@
     
   \section{Liveness Analysis}
 
-  purpose: compute variable at a program point to see wether if it is used by a code path later on
+  purpose: compute variable at a program point to see whether if it is used by a code path later on
 
   domain: set of variables
 
@@ -212,17 +495,21 @@
 
   gen(B) = locally exposed new definitions in basic block B
 
-  bounary condition:
+  boundary condition:
 
-  $out(entry) = \emptyset$
+  $in(entry) = \bot = \emptyset$
 
   \section{Reaching Definition Must-Analysis}
 
   purpose: compute if all paths incoming to the current program point has the definition $D: x = ...$ and there exists no reassignment of $x$ with something else after $D$
   
-  join operator = $\wedge$ (set intersection)
+  join operator = $\cap$ (set intersection)
 
-  everything else is the same as reaching definition may-analysis
+  everything else is the same as reaching definition may-analysis, except:
+
+  $in(entry) = \top = \emptyset$
+
+  $out(B) = \bot = U$ (universal set of definitions) for all $B \neq entry$
 
   \vfill\null
   \columnbreak
@@ -313,15 +600,11 @@
 
   lattice values: set of available expressions
 
-  partial ordering:
+  partial ordering: $set_1 \leq set_2 \iff set_1 \supseteq set_2$
 
-  $set_1 \leq set_2 \iff set_1 \subseteq set_2$
+  bookkeeping: expression table lookup mapping operands tuple of expression to variable (SSA) holding the result (LHS of assignment to expressions); this expression is queried and mutated during  traversal of graph by the algorithm
 
-  bookkeeping:
-
-  expression table lookup mapping operands tuple of expression to variable (SSA) holding the result (LHS of assignment to expressions); this expression is queried and mutated during  traversal of graph by the algorithm
-
-  traversal order: dominator tree order (eg: dfs over dominator tree)
+  traversal order: dfs over dominator tree
 
   algorithm:
   
@@ -392,9 +675,9 @@
 
   direction: forward
 
-  lattice values: $\bot = \emptyset$, $\{ s_i \}$ where $s_i$ is a copy statement, $\top =$ universal set
+  lattice values: $\bot =$ universal set, $\{ s_i \}$ where $s_i$ is a copy statement, $\top = \emptyset$
 
-  join operator = $\wedge$ (set intersection) $\implies$ must-analysis
+  join operator = $\cap$ (set intersection) $\implies$ must-analysis
   
   boundary condition:
 
@@ -643,14 +926,22 @@
   defer for now
 
   \vfill\null
-  \pagebreak
+  \columnbreak
   
   \section{Region Analysis}
   todo
-  
+
+  \vfill\null
+  \columnbreak
+
   \section{Loop Inversion}
+  todo
+
   transformation of a pre-test loop into a post-test loop
-  
+
+  \vfill\null
+  \columnbreak
+
 \bibliographystyle{plain}
 \bibliography{notebook}
     
