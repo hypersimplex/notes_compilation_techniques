@@ -2,7 +2,7 @@
 
 % \usepackage[fleqn]{amsmath}
 
-\usepackage[margin=1in]{geometry}
+\usepackage[margin=0.75in]{geometry}
 \usepackage{amsmath}
 % \usepackage{amsmath,amsfonts,amsthm,bm}
 \usepackage{amsthm}
@@ -85,14 +85,15 @@
   
 \begin{multicols*}{2}
 
-  Gathered notes from various references:
+  Condensed notes from various references, including:
   \begin{itemize}
   \item Modern Compiler Implementation in C \cite{appelbook}
+  \item Loop Transformations for Restructuring Compilers \cite{banerjee1993}
   \item High Performance Compilers for Parallel Computing \cite{wolfebook}
-  \item The implementation of Functional Programming Languages \cite{peyton1987}
-  \item Modern Compiler Design \cite{grune2012}
-  \item MLIR \cite{mlir2021}, \cite{lei2022}
+  \item MLIR \cite{mlir2021}
   \end{itemize}
+
+  .. and I'm going to skip lexing and parsing since it's not super interesting ;]
 
   \vfill\null
   \columnbreak
@@ -257,6 +258,9 @@
     stack_restore_count = 0
 
     for statement s in node:
+      // note: we can't replace use in phi-function
+      // here since we don't know which argument to
+      // replace
       for use of v in s, if s is a non-phi statement:
         replace use of v with name_map[v].back()
       if s is an assignment to v (incl. phi-function):
@@ -271,6 +275,11 @@
 
     // recursion using inverse immediate dominators /
     // children of the node in dominator tree
+    //
+    // this traversal guarantees nodes that dominates
+    // the currently visited node have been visited
+    // and that the `name_map` is poluated with the
+    // up-to-date mapping from those dominating nodes
     for child in inverse_idom(node):
       ssa_rename(name_map, child, v)
 
@@ -291,13 +300,13 @@
 
   \section{Semilattice}
 
-  note: we follow the convention used in MLIR (join-semilattice)
+  note: we follow the convention used in MLIR (join-semilattice), eg: $\bot$ / bottom means undefined in abstract value analysis
 
   $S = (V, \sqcup)$
 
   where $V$ = join semilattice values, $\sqcup$ = join operator
 
-  by construction, let bottom and top values satisfy:
+  by construction, let bottom ($\bot$) and top ($\top$) values satisfy:
   
   $x \sqcup \bot = x$\\
   $x \sqcup \top = \top$\\
@@ -405,7 +414,7 @@
 
   \section{Data Flow Analysis and Rewrite}
 
-  \subsection{Available Expression}
+  \subsection{Available Expression Analysis}
 
   purpose: compute set of expressions evaluated and not overwritten on all paths from the entry to the target program point
   
@@ -433,7 +442,7 @@
   
   in(entry) = $\top$ since no expressions are computed/available at the start
 
-  out(B) = $\bot$ for $\forall B \neq entry$: join operator narrows the candidates in algorithm
+  out(B) = $\bot$ for $(\forall B \in BasicBlocks) B \neq entry$: join operator narrows the candidates in algorithm
 
   extra notes:
 
@@ -493,11 +502,15 @@
   
   kill(B) = existing definitions overwritten (involving variable being defined/assigned) in B
 
-  gen(B) = locally exposed new definitions in basic block B
+  gen(B) = locally exposed (those not killed within the basic block) new definitions in basic block B
 
   boundary condition:
 
   $in(entry) = \bot = \emptyset$
+
+  partial order: $\leq$ $\equiv$ $\subseteq$
+
+  notes: useful in construction of use-def chains
 
   \section{Reaching Definition Must-Analysis}
 
@@ -511,6 +524,8 @@
 
   $out(B) = \bot = U$ (universal set of definitions) for all $B \neq entry$
 
+  partial order: $\leq$ $\equiv$ $\supseteq$
+
   \vfill\null
   \columnbreak
 
@@ -522,7 +537,7 @@
 
   direction: forward
 
-  lattice values: $\bot$, $c_i \in Constant$, $\top$
+  lattice values: $\bot$ (undefined), $c_i \in Constant$, $\top$ (over-defined)
 
   partial ordering: $\bot < c_i < \top$
   
@@ -531,7 +546,9 @@
   \begin{verbatim}
   f(a,b) = case (a,b) of
              (top, _) => top // absorb; top priority
+             (_, top) => top // absorb; top priority
              (bot, v) => v // bot acts as identity
+             (v, bot) => v // bot acts as identity
              (c, c) => c
              (c1, c2) | c1 != c2 => top // dynamic
   \end{verbatim}
@@ -556,7 +573,8 @@
   statement with binary operator S: $x = op(a, b)$
   \begin{verbatim}
   f(a, b) = case (a,b) of
-              (v, bot) => bot // unprocessed operand
+              // unprocessed operand (to be processed)
+              (v, bot) => bot
               (bot, v) => bot // unprocessed operand
               (top, _) => top
               (_, top) => top
@@ -564,25 +582,20 @@
 
   mapping[x] = f(a, b)
   \end{verbatim}
-
   statement with assignment operator $S: x = y$
-
   \begin{verbatim}
   f(x) = mapping[y]
   \end{verbatim}
-  
+
   external variables, eg:
   \begin{verbatim}
     x = read_io() //dynamic
   \end{verbatim}, then
   $x$ is mapped to $\top$
 
-  other statements that do not modify variables, then use identity mapping:
-  \begin{verbatim}
-  out = in
-  \end{verbatim}
+  other statements that do not modify variables, then use identity mapping: \verb|out = in|
 
-  transfer mapping composition for basic block $B$: compose statement-level mappings within $B$:
+  mapping composition for basic block $B$: compose statement-level mappings within $B$:
   \begin{verbatim}
   out(B) = f_n(...(f_0(in(B))))
   \end{verbatim}  
@@ -610,15 +623,13 @@
   
   \begin{verbatim}
   // maps: expression -> [variable]
-  // note a stack of variables as value in the map due
-   // to different scopes
+  // note a stack of variables as value in the map
   exprs_table = {}
 
   f(B) =  
     // in[B] computed by available expr analysis
     // seed with incoming paths' expressions
-    // as the set of available expressions
-    //
+    // as the set of available expressions;
     // this is a set of expressions
     local_avai_exprs = in[B].clone()
 
@@ -633,21 +644,22 @@
       key = rhs
 
       // check using local_avai_exprs to make sure
-      // expression is available on every incoming
-      // paths
+      // expression is available on every incoming paths;
       //
       // use of exprs_table to see dominating variable
       if key in local_avai_exprs and
          key in exprs_table:
+        // make replacement
         var_existing = exprs_table.lookup_last(key)
         replace S with `lhs = var_existing`
       else:
+        // generate expr for intra basic block
         exprs_table[key].push_back(lhs)
         local_avai_exprs.insert(key)
         keys_inserted_in_scope.push(key)
 
       // assignment statement for lhs => erase available
-      // expressions referencing lhs
+      // expressions referencing lhs; intra basic block kill
       local_avai_exprs.erase_where(|expr| expr.uses(lhs))
 
     // recursion using immediate domination relation
@@ -661,9 +673,6 @@
       if exprs_table[k].empty():
         exprs_table.erase(k)
   \end{verbatim}
-  
-  \vfill\null
-  \columnbreak
 
   \section{Copy Propagation, non-SSA, IR Rewrite}
 
@@ -678,24 +687,24 @@
   lattice values: $\bot =$ universal set, $\{ s_i \}$ where $s_i$ is a copy statement, $\top = \emptyset$
 
   join operator = $\cap$ (set intersection) $\implies$ must-analysis
-  
+
+  partial order: $\leq$ $\equiv$ $\supseteq$
+
   boundary condition:
 
   $in[entry] = \emptyset$
 
-  $in[B] / out[B] = $ universal set for $B \neq entry$
+  $in[B] / out[B] = \bot =$ universal set for $B \neq entry$
 
   transfer function:
 
   $out(B) = (in(B) - kill(B)) \cup gen(B)$
 
-  $kill(B) =$ set of statements that have any variable in its LHS or RHS assigned to or modified later on in basic block $B$; this is similar to reaching definition analysis except that we also kill if source variable is modified in any part of $B$ (vs. reaching definition where we kill only if target variable is modified later on in $B$)
+  $kill(B) =$ set of statements that have any variable in its LHS or RHS assigned to or modified later on in basic block $B$; this is similar to reaching definition analysis except that we also kill if source variable is modified in any part of $B$ (vs. reaching definition where we kill if target variable (and ignore source variable) is modified later on in $B$)
 
   $gen(B) =$ set of statements that are of the form $S: a = b$ and $a, b$ are not modified later on in $B$
 
-  other notes:
-
-  similar to available expression analysis, but different in the domain and kill set
+  other notes: most similar to available expression analysis, with difference in the domain and kill logic
 
   \subsection{IR rewrite phase}
 
@@ -706,7 +715,7 @@
     cur_available = in[B].clone().map(|s|{
       let (S: x=y) = s
       (x, y)
-    })
+    }) // from analysis phase; maps target to source
     for instruction S in B:
       for (var x) referenced in S's RHS:
       // eg: `.. = .. x ..` in S
@@ -719,6 +728,8 @@
         cur_available.erase_where(|item|{
           item is of form `(v, _)` or `(_, v)`
         })
+      // for intra basic block copy propagation,
+      // not covered by inter basic block analysis
       if S is of form `u=w` and `w!=u` (copy statement):
         cur_available.insert(u, w)
 
@@ -728,8 +739,7 @@
     key
   \end{verbatim}
 
-  other notes:
-
+  other notes:\\
   applying copy propagation may make variable be live longer
 
   \vfill\null
@@ -748,7 +758,7 @@
   // note: since program is in SSA form, items in
   // copy_map are not overwritten/deleted and only
   // can expand
-  copy_map = {}
+  copy_map = {} // maps destination to source
 
   // alternatively can use reverse post-order
   // (reverse dfs post-visit) to guarantee that
@@ -777,6 +787,7 @@
           copy_map.insert(x, operand)
           replace S with `x = operand`
 
+      // traversal in dominance order
       for child in dominator_tree[B]:
         f(child)
 
@@ -821,6 +832,8 @@
           remove S
           continue
 
+        // logic for intra basic block DCE:
+
         // definition kills liveness
         live_vars.erase(x)
 
@@ -861,7 +874,7 @@
 
   \begin{verbatim}
   worklist = []
-  mark = {}
+  mark = {} // marked means live, otherwise dead
 
   // initialization
   // note: exit node can be marked as having side effect
@@ -912,7 +925,7 @@
   nearest_live_post_dominator(B) =
     // use post dominance tree to query
     cur = ipdom(B)
-    // note: exit node have side effect and thus marked
+    // note: we can assume exit node have side effect and mark it
     while cur != null and cur has no marked instructions:
       cur = ipdom(cur)
     cur
@@ -922,22 +935,37 @@
   \columnbreak
 
   \section{Partial Redundancy Elimination, IR Rewrite}
-  
-  defer for now
+  todo
 
-  \vfill\null
-  \columnbreak
-  
   \section{Region Analysis}
   todo
 
-  \vfill\null
-  \columnbreak
-
-  \section{Loop Inversion}
+  \section{Natural Loops}
   todo
 
-  transformation of a pre-test loop into a post-test loop
+  \section{Control Dependence \& Post Dominance Frontier}
+  todo
+
+  \section{Immediate Dominator Computation}
+  todo
+
+  \section{SSA Form $\equiv$ Functional Programming}
+  todo
+
+  \section{Block Argument Form}
+  todo
+
+  \section{Unimodular \& Polyhedral Techniques for Optimization in Iteration Space}
+  todo
+
+  \section{Case Studies of Various IR Designs for ML}
+  todo
+
+  \section{Query/Pull-based Compilation System}
+  todo
+
+  \section{Solvers for Type Classes and Traits}
+  todo
 
   \vfill\null
   \columnbreak
