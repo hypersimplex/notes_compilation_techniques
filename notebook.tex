@@ -264,8 +264,10 @@
       for use of v in s, if s is a non-phi statement:
         replace use of v with name_map[v].back()
       if s is an assignment to v (incl. phi-function):
-        name_map[v].push(generate_unique(v))
+        new_name = generate_unique(v)
+        name_map[v].push(new_name)
         stack_restore_count += 1
+        s.replace_assign_to_with(new_name)
 
     // fix up argument to phi-functions
     for n in successors(node):
@@ -278,7 +280,7 @@
     //
     // this traversal guarantees nodes that dominates
     // the currently visited node have been visited
-    // and that the `name_map` is poluated with the
+    // and that the `name_map` is populated with the
     // up-to-date mapping from those dominating nodes
     for child in inverse_idom(node):
       ssa_rename(name_map, child, v)
@@ -482,6 +484,8 @@
   $out(exit) = \emptyset$ if pure local analysis, or
 
   $out(exit)$ = set of variables referenced by return statement
+
+  $in(B) = \emptyset$ for $\forall B \neq$ exit block
   
   \vfill\null
   \columnbreak
@@ -500,13 +504,13 @@
 
   $out(B) = (in(B) - kill(B)) \cup gen(B)$
   
-  kill(B) = existing definitions overwritten (involving variable being defined/assigned) in B
+  kill(B) = existing definitions overwritten (involving variable being defined/assigned) in B; eg \verb|x = ...| where \verb|x| is assigned $\implies$ existing definition sites for `x` are killed
 
   gen(B) = locally exposed (those not killed within the basic block) new definitions in basic block B
 
   boundary condition:
 
-  $in(entry) = \bot = \emptyset$
+  $in(entry) = \bot = \emptyset$, $out(B) = \bot = \emptyset$
 
   partial order: $\leq$ $\equiv$ $\subseteq$
 
@@ -573,7 +577,8 @@
   statement with binary operator S: $x = op(a, b)$
   \begin{verbatim}
   f(a, b) = case (a,b) of
-              // unprocessed operand (to be processed)
+              // unprocessed operand associated with
+              // `bot` to be processed later
               (v, bot) => bot
               (bot, v) => bot // unprocessed operand
               (top, _) => top
@@ -636,7 +641,7 @@
     // for rollback at the exit of the scope
     keys_inserted_in_scope = {}
 
-    for instr S in B in sequence:
+    for instr S in B in forward sequence:
       let (lhs = rhs) = S
 
       // expression under consideration
@@ -654,7 +659,7 @@
         replace S with `lhs = var_existing`
       else:
         // generate expr for intra basic block
-        exprs_table[key].push_back(lhs)
+        exprs_table[key].push_back(lhs) // rhs -> lhs
         local_avai_exprs.insert(key)
         keys_inserted_in_scope.push(key)
 
@@ -662,9 +667,9 @@
       // expressions referencing lhs; intra basic block kill
       local_avai_exprs.erase_where(|expr| expr.uses(lhs))
 
-    // recursion using immediate domination relation
+    // recursion using immediate dominator relation
     // this guarantees items processed in exprs_table
-    // is seen when we visit dominated nodes
+    // are seen when we visit dominated nodes
     for child in dominator_tree[B]:
       f(child)
 
@@ -740,7 +745,7 @@
   \end{verbatim}
 
   other notes:\\
-  applying copy propagation may make variable be live longer
+  applying copy propagation may make variable live longer
 
   \vfill\null
   \columnbreak
