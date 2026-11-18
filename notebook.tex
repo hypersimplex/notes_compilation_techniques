@@ -117,7 +117,7 @@
 
   $x$ sdom $y$ $\iff$ $x$ dom $y$ and $x \neq y$
 
-  $\neg$(x$ sdom $y) $\iff$ $\neg$($x$ dom $y$) or $x = y$
+  $\neg$($x$ sdom $y$) $\iff$ $\neg$($x$ dom $y$) or $x = y$
   
   \section{Immediate Dominance}
 
@@ -163,7 +163,7 @@
 
   note for $DF_{local}$:
 
-  $y$ has a predecessor $x$, and $x$ dom $x$ which trivially satisfies part of the requirement for dominance frontier of $x$
+  $y$ has a predecessor $x$, and $x$ dom $x$ which trivially satisfies part of the requirement for dominance frontier of $x$ ($(\exists z \in pred(y)) x \ dom\ z$)
 
   $DF_{up}(z) = \{ y \}$ s.t. $y \in$ DF($z$) and $\neg$(idom($z$) sdom $y)$
 
@@ -173,17 +173,17 @@
 
   call to $DF_{up}(z)$, $z \in idom^{-1}(x)$ in $DF(x)$ guarantees that $y \in DF(z)$ has a predecessor that is dominated by $z$ and by transitivity that predecessor is dominated by $x$:
 
-  $y \in DF(z) \implies$ exists a predecessor $p$ that is dominated by $z$ by definition/construction
+  $y \in DF(z) \implies$ exists a predecessor of $y$, $p$, that is dominated by $z$ by definition/construction
 
-  $z \in idom^{-1}(x) \iff$ $z$ is dominated by $x$
+  $z \in idom^{-1}(x) \implies $ $z$ is dominated by $x$
 
   use transitivity: $z$ dom $p$, $x$ dom $z$ $\implies$ $x$ dom $p$
 
-  $z$ therefore has a predecessor $p$ that is dominated by $x$
+  $y$ therefore has a predecessor $p$ that is dominated by $x$
 
   then, the remaining check is just:
 
-  $\neg$($x$ sdom $z$) = $\neg$($idom(z)$ sdom $z$)
+  $\neg$($x$ sdom $y$) = $\neg$($idom(z)$ sdom $y$)
 
   \vfill\null
   \columnbreak
@@ -195,6 +195,8 @@
   phi-function occurs at CFG convergence point where incoming paths contain assignment(s) to target variable to different values in their paths
 
   the minimal number of convergence points are computable using dominance frontier of each node where each node contains an assignment to the target variable
+
+  for each node containing assignment / phi-function, convergence points are earliest points reachable from it that are not strictly dominated by the node
 
   \begin{verbatim}
   place_phi_for_var(v):
