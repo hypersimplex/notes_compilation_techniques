@@ -304,11 +304,11 @@
 
   \section{Semilattice}
 
-  note: we follow the convention used in MLIR (join-semilattice), eg: $\bot$ / bottom means undefined in abstract value analysis
+  note: we follow the join-semilattice convention used in MLIR, eg: $\bot$ (bottom) = uninitialized (optimistic), $\top$ (top) = overdefined (conservative)
 
   $S = (V, \sqcup)$
 
-  where $V$ = join semilattice values, $\sqcup$ = join operator
+  where $V$ = join-semilattice values, $\sqcup$ = join operator
 
   by construction, let bottom ($\bot$) and top ($\top$) values satisfy:
   
@@ -334,26 +334,24 @@
 
   $a \leq b \iff a \sqcup b = b$
 
-  least upperbound definition:
+  least upper bound definition:
 
-  $a \sqcup b = m \iff (a \leq m) \wedge (b \leq m) \wedge ((\forall c) (a \leq c) \wedge (b \leq c) \implies m \leq c)$
+  $a \sqcup b = m \iff (a \leq m) \wedge (b \leq m) \wedge ((\forall c)\ ((a \leq c) \wedge (b \leq c) \implies m \leq c))$
+
+  note (duality): the meet-semilattice convention (eg: Dragon Book) reverses the partial order ($\bot \leftrightarrow \top$, $\sqcup \leftrightarrow \sqcap$), turning LFP/JOP into MFP (Maximum Fixed Point) / MOP (Meet Over all Paths)
 
   \vfill\null
   \columnbreak
     
-  \section{MFP (Maximum Fixed Point)}
+  \section{LFP (Least Fixed Point)}
 
-  idea: join paths at intermediate points before applying transfer function $f_i$ for the current node/block, eg:
+  idea (dual to MFP): join paths at intermediate points before applying transfer function $f_i$ for the current node/block, eg:
   
   $f_3(f_1(x \sqcup y) \sqcup f_2(a \sqcup b))$
 
-  note: transfer function $f$ is required to be monotone in order to converge to a fix point where:
+  note: $f$ must be monotone ($x \leq y \implies f(x) \leq f(y)$ under the semilattice partial order) and the semilattice must satisfy the ascending chain condition (eg: finite height) to guarantee convergence to the least fixed point
 
-  $x \leq y \implies f(x) \leq f(y)$
-
-  using the partial order relation defined in Semilattice section
-
-  typically this is infused with the iterated fixed point algorithm for DFA (forward direction):
+  typically this is computed with the iterated fixed point algorithm for DFA (forward direction):
 
   \begin{verbatim}
   // initialization of boundary conditions:
@@ -369,7 +367,7 @@
   // optimization: use any pseudo-topo. sorted order
   worklist = reverse_post_order(cfg) \ {entry}
 
-  while let(node) = worklist.take():
+  while let Some(node) = worklist.take():
     old_output_value = node.output_value
 
     // compute join at intermediate point from
@@ -395,23 +393,21 @@
           worklist.add(succ)
   \end{verbatim}
   
-  \section{MOP (Meet Over Path)}
+  \section{JOP (Join Over all Paths)}
 
-  idea: apply transfer function over all paths leading to the current node/block before join ($\sqcup$) operation
+  idea (dual to MOP): apply transfer functions along each path to the current block before taking the join ($\sqcup$)
 
-  let $f$ be the overall transfer function:
+  for a path $p = (b_0, \dots, b_k)$ from $b_0 = \text{entry}$ to $b_k = n$:
 
-  $f(x) = f_n(f_{n-1}(..f_{entry}(x)))$, $n$ being the current block
+  $f_p(x) = f_{b_{k-1}}(\dots f_{b_0}(x))$ (for $\text{in}[n]$; $\text{id}$ if $k{=}0$; apply $f_n$ for $\text{out}[n]$)
 
-  $MOP = \bigsqcup_{p:=\text{path\ to\ current\ block}} f_p(\text{boundary\_value})$
+  $\text{JOP}(n) = \bigsqcup_{p \in \text{paths}(\text{entry} \to n)} f_p(\text{boundary\_value})$
 
-  if the DFA framework is distributive, then it satisfies:
+  if the DFA framework is distributive, then each transfer function satisfies $f(x \sqcup y) = f(x) \sqcup f(y)$, which implies $\text{JOP} = \text{LFP}$
 
-  $f(x) \sqcup f(y) = f(x \sqcup y)$
+  precision under $\leq$ (smaller = more precise):
 
-  in terms of precision, using partial ordering relation:
-  
-  $\bot \leq$ ideal $\leq$ MOP $\leq$ MFP $\leq \top$
+  $\bot \leq \text{ideal} \leq \text{JOP} \leq \text{LFP} \leq \top$
 
   \vfill\null
   \columnbreak
